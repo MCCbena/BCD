@@ -8,17 +8,19 @@
 #include <stdio.h>
 
 #define getAddr(n, addr) ((n.decimal[(addr)/2] >> !((addr)%2)*4) & (0x0F))
-#define setAddr(n, addr, value) n.decimal[(addr)/2] |= ((int)(value)) << (int)(!((addr)%2))*4;
+#define setAddr(n, addr, value) (n.decimal[(addr)/2] |= ((int)(value)) << (int)(!((addr)%2))*4)
 
 typedef struct{
     char sign; //符号
     unsigned int point; //整数の最後のバイト
-    unsigned char decimal[16]; //データ
+    unsigned char decimal[128]; //データ
 }BCD;
 
 BCD makeBCD(double value);
 BCD quickMakeBCD(unsigned char sign, const char* value, unsigned int digits);
-void display(BCD);
+void display(BCD n);
+double toDouble(BCD n);
+long toLong(BCD n);
 
 BCD addB(BCD n1, BCD n2);
 BCD subB(BCD n1, BCD n2);
@@ -33,7 +35,7 @@ char gteB(BCD n1, BCD n2);
 char ltB(BCD n1, BCD n2);
 char lteB(BCD n1, BCD n2);
 
-const unsigned int integer_byte = 2;
+const unsigned int integer_byte = 10;
 
 BCD makeBCD(double value){
     BCD bcd = {0};
@@ -109,7 +111,7 @@ BCD quickMakeBCD(unsigned char sign, const char* value, unsigned int digits){
 
 BCD addB(BCD n1, BCD n2){
     BCD bcd = {0};
-    bcd.point = integer_byte*2;
+    bcd.point = n1.point;
     char of = 0;
     char sign = (char)(n1.sign ^ n2.sign);
     bcd.sign = (char)(n1.sign && n2.sign);
@@ -122,18 +124,17 @@ BCD addB(BCD n1, BCD n2){
             BCD temp = n1;
             n1 = n2;
             n2 = temp;
+            bcd.sign = n1.sign;
             n1.sign = 0;
-        }
+        }else bcd.sign = n1.sign;
         break;
     }
-    bcd.sign = n1.sign;
     n2.sign = sign;
 
-    for(int addr = (sizeof(bcd.decimal)-1)*2+1; addr >= 0; addr--){
+    for(int addr = (sizeof(bcd.decimal)*2-1); addr >= 0; addr--){
         unsigned int decimal1_bit = getAddr(n1, addr);
         unsigned int decimal2_bit = getAddr(n2, addr)+of;
         if(decimal1_bit == 0 && decimal2_bit == 0) continue;
-
         unsigned int sum;
         //マイナスが含まれているかいないかで別の動きをする
         if(sign==0) {
@@ -157,7 +158,6 @@ BCD addB(BCD n1, BCD n2){
         setAddr(bcd, addr, sum);
     }
 
-
     return bcd;
 }
 
@@ -168,21 +168,22 @@ BCD subB(BCD n1, BCD n2){
 
 BCD mulB(BCD n1, BCD n2){
     BCD bcd = {0};
-    bcd.point = integer_byte*2;
+    bcd.point = n1.point;
     char sign = (char)(n1.sign ^ n2.sign);
     n1.sign = 0;
     n2.sign = 0;
 
     for (int i0 = 0; i0 < (sizeof(n2.decimal)*2); ++i0) {
         BCD temp_bcd = {0};
-        temp_bcd.point = integer_byte*2;
+        temp_bcd.point = n1.point;
 
         unsigned int val = getAddr(n2, i0);
         if(val==0) continue;
         for (int i1 = 0; i1 < val; ++i1) {
             temp_bcd = addB(temp_bcd, n1);
         }
-        temp_bcd = pow10B(temp_bcd, (int) integer_byte - i0 + 1);
+
+        temp_bcd = pow10B(temp_bcd, (int) (bcd.point-1) - i0);
         bcd = addB(bcd, temp_bcd);
     }
 
@@ -200,9 +201,12 @@ BCD divB(BCD n1, BCD n2){
     BCD bcd = {0};
     bcd.point = n1.point;
 
+
     BCD one = {0};
     one.point = bcd.point;
-    setAddr(one, integer_byte*2-1, 1);
+    setAddr(one, n1.point-1, 1);
+    n1.sign = (n1.sign ^ n2.sign);
+    n2.sign = 0;
 
     BCD zero = {0};
     zero.point = bcd.point;
@@ -297,6 +301,9 @@ char ltB(BCD n1, BCD n2){
         if(n1.decimal[i] < n2.decimal[i]){
             return 1;
         }
+        if(n1.decimal[i] > n2.decimal[i]){
+            return 0;
+        }
     }
 
     return 0;
@@ -357,6 +364,50 @@ void display(BCD n){
         }
     }
     printf("\n");
+}
+
+/**
+ * BCDをlongに変換します。（小数点丸め込み）
+ * toDoubleを用いてLongにキャストするよりも高速に変換することが可能です。
+ * @param n
+ * @return
+ */
+long toLong(BCD n){
+    long ret = 0;
+    char input = 0;
+    for (int i = 0; i < integer_byte * 2; ++i) {
+        int val = getAddr(n, i);
+        if(val!=0) input = 1;
+        if(input) {
+            ret *= 10;
+            ret += val;
+        }
+    }
+
+    return ret;
+}
+
+
+/**
+ *
+ * @param n
+ * @return
+ */
+double toDouble(BCD n){
+    double ret = 0;
+    char input = 0;
+
+    for(int i = ((sizeof(n.decimal)-1)*2); i >= n.point; --i){
+        double val = getAddr(n, i);
+        if(val!=0) input=1;
+        if(input){
+            ret/=10;
+            ret+=val/10;
+        }
+
+    }
+
+    return ret + (double)toLong(n);
 }
 
 #endif //BCD_BCD_H
