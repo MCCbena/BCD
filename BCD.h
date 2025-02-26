@@ -116,20 +116,25 @@ BCD addB(BCD n1, BCD n2){
     char sign = (char)(n1.sign ^ n2.sign);
     bcd.sign = (char)(n1.sign && n2.sign);
 
-    //必ず|n1|になるようにする
-    for (int i = 0; i < sizeof (bcd.decimal); i++) {
-        if(n1.decimal[i] == n2.decimal[i]) continue;
+    //必ずn1のほうが大きくなるようにする
+    if(sign) {
+        for (int i = 0; i < sizeof(bcd.decimal); i++) {
+            if (n1.decimal[i] == n2.decimal[i]) continue;
 
-        if(n1.decimal[i] < n2.decimal[i]){
-            BCD temp = n1;
-            n1 = n2;
-            n2 = temp;
-            bcd.sign = n1.sign;
-            n1.sign = 0;
-        }else bcd.sign = n1.sign;
-        break;
+            if (n1.decimal[i] < n2.decimal[i]) {
+                BCD temp = n1;
+                n1 = n2;
+                n2 = temp;
+                bcd.sign = n1.sign;
+                n1.sign = 0;
+            } else bcd.sign = n1.sign;
+            break;
+        }
+        n2.sign = sign;
+    } else {
+        n1.sign = 0;
+        n2.sign = 0;
     }
-    n2.sign = sign;
 
     for(int addr = (sizeof(bcd.decimal)*2-1); addr >= 0; addr--){
         unsigned int decimal1_bit = getAddr(n1, addr);
@@ -169,7 +174,7 @@ BCD subB(BCD n1, BCD n2){
 BCD mulB(BCD n1, BCD n2){
     BCD bcd = {0};
     bcd.point = n1.point;
-    char sign = (char)(n1.sign ^ n2.sign);
+    char sign = (char)(n1.sign != n2.sign);
     n1.sign = 0;
     n2.sign = 0;
 
@@ -179,8 +184,31 @@ BCD mulB(BCD n1, BCD n2){
 
         unsigned int val = getAddr(n2, i0);
         if(val==0) continue;
-        for (int i1 = 0; i1 < val; ++i1) {
-            temp_bcd = addB(temp_bcd, n1);
+        temp_bcd = n1;
+
+        if (val >= 2) {
+            temp_bcd = addB(temp_bcd, temp_bcd);
+            //display(temp_bcd);
+            if (val >= 4) {
+                if (val >= 8) {
+                    temp_bcd = addB(temp_bcd, temp_bcd);
+                    temp_bcd = addB(temp_bcd, temp_bcd);
+                    if (val == 9){
+                        temp_bcd = addB(temp_bcd, n1);
+                    }
+                }else{
+                    if(val != 4) {
+                        if (val >= 6) {
+                            temp_bcd = addB(temp_bcd, addB(temp_bcd, temp_bcd));
+                        }else temp_bcd = addB(temp_bcd, temp_bcd);
+                        if (val != 6) {
+                            temp_bcd = addB(temp_bcd, n1);
+                        }
+                    }else temp_bcd = addB(temp_bcd, temp_bcd);
+                }
+            } else if(val==3){
+                temp_bcd = addB(temp_bcd, n1);
+            }
         }
 
         temp_bcd = pow10B(temp_bcd, (int) (bcd.point-1) - i0);

@@ -10,10 +10,16 @@
 BCD factorialB(BCD n);
 BCD logB(BCD n);
 BCD sqrtB(BCD n);
+
 //三角関数
 BCD sinB(BCD n);
 BCD cosB(BCD n);
 BCD tanB(BCD n);
+//逆三角関数
+BCD asinB(BCD n);
+BCD acosB(BCD n);
+BCD atanB(BCD n);
+
 
 /**
  * n!を出力します。小数点がある場合の動作は保証されません。
@@ -168,6 +174,12 @@ BCD sinB(BCD n){
     return bcd;
 }
 
+/**
+ * マクローリン展開によりcosを求めます。
+ * ラジアンです。
+ * @param n
+ * @return
+ */
 BCD cosB(BCD n){
     //必須定数の宣言
     BCD zero = {0};
@@ -197,6 +209,43 @@ BCD cosB(BCD n){
 
 BCD tanB(BCD n){
     return divB(sinB(n), cosB(n));
+}
+
+BCD asinB(BCD n){
+    //必須定数の宣言
+    BCD zero = {0};
+    zero.point = n.point;
+    BCD bcd = n;
+    BCD one = quickMakeBCD(0, "1", 1);
+    BCD two = quickMakeBCD(0, "2", 1);
+
+    BCD numerator = one;
+    BCD denominator = two;
+
+    for (BCD i = one; ; i = addB(i, one)) {
+        BCD x = addB(mulB(i, two), one); //i*2+1 を実行。sin 0=0であるため、sinの計算は省略する。そのためにiを2倍している。
+
+        BCD power = powB(n, x);
+
+        //BCD temp = divB(mulB(power, zero_point_five), factorial);
+        BCD temp = divB(mulB(power, numerator), mulB(denominator, x));
+        if(eqB(temp,zero)){
+            printf("overflow\n");
+            display(i);
+            break;
+        }
+        bcd = addB(bcd, temp);
+
+        numerator = mulB(numerator, x);
+        denominator = mulB(denominator, addB(x, one));
+        if(getAddr(denominator, 1) != 0){
+            printf("end\n");
+            display(i);
+            break;
+        }
+    }
+
+    return bcd;
 }
 
 #endif //BCD_MATHBCD_H
