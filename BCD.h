@@ -172,6 +172,9 @@ BCD subB(BCD n1, BCD n2){
 }
 
 BCD mulB(BCD n1, BCD n2){
+    char is_cached[10] = {0};
+    BCD cache[10];
+
     BCD bcd = {0};
     bcd.point = n1.point;
     char sign = (char)(n1.sign != n2.sign);
@@ -186,29 +189,35 @@ BCD mulB(BCD n1, BCD n2){
         if(val==0) continue;
         temp_bcd = n1;
 
-        if (val >= 2) {
-            temp_bcd = addB(temp_bcd, temp_bcd);
-            //display(temp_bcd);
-            if (val >= 4) {
-                if (val >= 8) {
-                    temp_bcd = addB(temp_bcd, temp_bcd);
-                    temp_bcd = addB(temp_bcd, temp_bcd);
-                    if (val == 9){
-                        temp_bcd = addB(temp_bcd, n1);
-                    }
-                }else{
-                    if(val != 4) {
-                        if (val >= 6) {
-                            temp_bcd = addB(temp_bcd, addB(temp_bcd, temp_bcd));
-                        }else temp_bcd = addB(temp_bcd, temp_bcd);
-                        if (val != 6) {
+        if(is_cached[val] == 0) {
+            if (val >= 2) {
+                temp_bcd = addB(temp_bcd, temp_bcd);
+                //display(temp_bcd);
+                if (val >= 4) {
+                    if (val >= 8) {
+                        temp_bcd = addB(temp_bcd, temp_bcd);
+                        temp_bcd = addB(temp_bcd, temp_bcd);
+                        if (val == 9) {
                             temp_bcd = addB(temp_bcd, n1);
                         }
-                    }else temp_bcd = addB(temp_bcd, temp_bcd);
+                    } else {
+                        if (val != 4) {
+                            if (val >= 6) {
+                                temp_bcd = addB(temp_bcd, addB(temp_bcd, temp_bcd));
+                            } else temp_bcd = addB(temp_bcd, temp_bcd);
+                            if (val != 6) {
+                                temp_bcd = addB(temp_bcd, n1);
+                            }
+                        } else temp_bcd = addB(temp_bcd, temp_bcd);
+                    }
+                } else if (val == 3) {
+                    temp_bcd = addB(temp_bcd, n1);
                 }
-            } else if(val==3){
-                temp_bcd = addB(temp_bcd, n1);
             }
+            cache[val] = temp_bcd;
+            is_cached[val] = 1;
+        }else{
+            temp_bcd = cache[val];
         }
 
         temp_bcd = pow10B(temp_bcd, (int) (bcd.point-1) - i0);
