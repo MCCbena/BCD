@@ -7,8 +7,11 @@
 
 #include <stdio.h>
 
-#define getAddr(n, addr) ((n.decimal[(addr)/2] >> !((addr)%2)*4) & (0x0F))
-#define setAddr(n, addr, value) (n.decimal[(addr)/2] |= ((int)(value)) << (int)(!((addr)%2))*4)
+#define getAddr(n, addr) ((n.decimal[(addr)>>1] >> (!(addr&0x01)<<2)) & (0x0F))
+#define setAddr(n, addr, value) (n.decimal[(addr)>>1] |= (((addr)&0x01) ? value: value<<4))
+
+#define HEX_TO_DEC(x)  ((((x) >> 4) & 0x0F) * 10 + ((x) & 0x0F))
+#define DEC_TO_HEX(x)  ((x)/10 << 4 | (x)%10)
 
 typedef struct{
     char sign; //符号
@@ -27,6 +30,7 @@ BCD subB(BCD n1, BCD n2);
 BCD mulB(BCD n1, BCD n2);
 BCD divB(BCD n1, BCD n2);
 
+BCD quickAddB(BCD n1, BCD n2);
 BCD pow10B(BCD n, int pow);
 
 char eqB(BCD n1, BCD n2);
@@ -108,7 +112,6 @@ BCD quickMakeBCD(unsigned char sign, const char* value, unsigned int digits){
 
     return bcd;
 }
-
 BCD addB(BCD n1, BCD n2){
     BCD bcd = {0};
     bcd.point = n1.point;
@@ -136,31 +139,58 @@ BCD addB(BCD n1, BCD n2){
         n2.sign = 0;
     }
 
+    if (sign==0) {
+        return quickAddB(n1, n2);
+    }
+
+    //マイナスが含まれているかいないかで別の動きをする
     for(int addr = (sizeof(bcd.decimal)*2-1); addr >= 0; addr--){
         unsigned int decimal1_bit = getAddr(n1, addr);
         unsigned int decimal2_bit = getAddr(n2, addr)+of;
         if(decimal1_bit == 0 && decimal2_bit == 0) continue;
         unsigned int sum;
-        //マイナスが含まれているかいないかで別の動きをする
-        if(sign==0) {
-            sum = decimal1_bit + decimal2_bit;
-            if (sum >= 0X0A) {
-                of = 1;
-                //sumから0x0Aを引くことで4ビットが絶対に9を越さないようにする
-                sum -= 0x0A;
-            } else of = 0;
-        }else {
-            if (decimal1_bit < decimal2_bit) {
-                //計算結果がマイナスになってしまう場合、繰り下げを行う
-                sum = (decimal1_bit + 0x0A) - decimal2_bit;
-                of = 1;
-            } else {
-                //decimal2_bitに繰り下げが発生した場合引くようになってるから通常計算
-                sum = decimal1_bit - decimal2_bit;
-                of = 0;
-            }
+
+        if (decimal1_bit < decimal2_bit) {
+            //計算結果がマイナスになってしまう場合、繰り下げを行う
+            sum = (decimal1_bit + 0x0A) - decimal2_bit;
+            of = 1;
+        } else {
+            //decimal2_bitに繰り下げが発生した場合引くようになってるから通常計算
+            sum = decimal1_bit - decimal2_bit;
+            of = 0;
         }
         setAddr(bcd, addr, sum);
+    }
+
+    return bcd;
+}
+
+/**
+ * マイナスを一切考慮しない、単純な足し算をします。その代わり高速です。
+ * @param n1
+ * @param n2
+ * @return
+ */
+BCD quickAddB(BCD n1, BCD n2) {
+
+    BCD bcd = {0};
+    bcd.point = n1.point;
+    char of = 0;
+
+    for(int addr = (sizeof(bcd.decimal)-1); addr >= 0; addr--){
+        unsigned int decimal1_bit = HEX_TO_DEC(n1.decimal[addr]);
+        unsigned int decimal2_bit = HEX_TO_DEC(n2.decimal[addr])+of;
+        if(decimal1_bit == 0 && decimal2_bit == 0) continue;
+        unsigned int sum;
+        sum = DEC_TO_HEX(decimal1_bit + decimal2_bit);
+        if ((sum>>4) >= 0X0A) {
+            of = 1;
+            //sumから0x0Aを引くことで4ビットが絶対に9を越さないようにする
+            sum -= (0x0A<<4);
+        } else of = 0;
+
+        //setAddr(bcd, addr, sum);
+        bcd.decimal[addr] = sum;
     }
 
     return bcd;
@@ -177,41 +207,39 @@ BCD mulB(BCD n1, BCD n2){
 
     BCD bcd = {0};
     bcd.point = n1.point;
-    char sign = (char)(n1.sign != n2.sign);
     n1.sign = 0;
     n2.sign = 0;
 
-    for (int i0 = 0; i0 < (sizeof(n2.decimal)*2); ++i0) {
-        BCD temp_bcd = {0};
-        temp_bcd.point = n1.point;
+    for (int i0 = 0; i0 < (sizeof(n2.decimal)<<1); i0++) {
 
-        unsigned int val = getAddr(n2, i0);
+        unsigned int val = 0;
+        val = getAddr(n2, i0);
         if(val==0) continue;
-        temp_bcd = n1;
+        BCD temp_bcd = n1;
 
         if(is_cached[val] == 0) {
             if (val >= 2) {
-                temp_bcd = addB(temp_bcd, temp_bcd);
+                temp_bcd = quickAddB(temp_bcd, temp_bcd);
                 //display(temp_bcd);
                 if (val >= 4) {
                     if (val >= 8) {
-                        temp_bcd = addB(temp_bcd, temp_bcd);
-                        temp_bcd = addB(temp_bcd, temp_bcd);
+                        temp_bcd = quickAddB(temp_bcd, temp_bcd);
+                        temp_bcd = quickAddB(temp_bcd, temp_bcd);
                         if (val == 9) {
-                            temp_bcd = addB(temp_bcd, n1);
+                            temp_bcd = quickAddB(temp_bcd, n1);
                         }
                     } else {
                         if (val != 4) {
                             if (val >= 6) {
-                                temp_bcd = addB(temp_bcd, addB(temp_bcd, temp_bcd));
-                            } else temp_bcd = addB(temp_bcd, temp_bcd);
+                                temp_bcd = quickAddB(temp_bcd, quickAddB(temp_bcd, temp_bcd));
+                            } else temp_bcd = quickAddB(temp_bcd, temp_bcd);
                             if (val != 6) {
-                                temp_bcd = addB(temp_bcd, n1);
+                                temp_bcd = quickAddB(temp_bcd, n1);
                             }
-                        } else temp_bcd = addB(temp_bcd, temp_bcd);
+                        } else temp_bcd = quickAddB(temp_bcd, temp_bcd);
                     }
                 } else if (val == 3) {
-                    temp_bcd = addB(temp_bcd, n1);
+                    temp_bcd = quickAddB(temp_bcd, n1);
                 }
             }
             cache[val] = temp_bcd;
@@ -221,10 +249,11 @@ BCD mulB(BCD n1, BCD n2){
         }
 
         temp_bcd = pow10B(temp_bcd, (int) (bcd.point-1) - i0);
-        bcd = addB(bcd, temp_bcd);
+        bcd = quickAddB(bcd, temp_bcd);
     }
 
-    bcd.sign = sign;
+
+    bcd.sign = (n1.sign != n2.sign);;
     return bcd;
 }
 
@@ -262,14 +291,14 @@ BCD divB(BCD n1, BCD n2){
 
         while (lteB(div_num, dividend)){//現在の控除数の値を除数が超えていなければ商のカウンターを増やす
             div_num_back = div_num;
-            div_num = addB(div_num, n2);
-            div_num_count = addB(div_num_count, one);
+            div_num = quickAddB(div_num, n2);
+            div_num_count = quickAddB(div_num_count, one);
         }
 
 
         //小数点の場所を維持
         BCD temp = pow10B(div_num_count, -i);
-        bcd = addB(bcd, temp); //bcdに計算した商を代入
+        bcd = quickAddB(bcd, temp); //bcdに計算した商を代入
         dividend = pow10B(subB(dividend, div_num_back), 1);//次の位の控除数を計算して代入
     }
 
